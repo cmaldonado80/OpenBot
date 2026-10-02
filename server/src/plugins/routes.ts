@@ -583,6 +583,9 @@ export function createPluginRoutes(
       if (error instanceof CatalogueEntryUnknownError) {
         return context.json({ error: error.message }, 404);
       }
+      if (error instanceof PluginRefusedError) {
+        return context.json({ error: error.message, rule: error.rule }, 403);
+      }
       /*
        * The one audience the sentence was written for, and the only route that may show it.
        *

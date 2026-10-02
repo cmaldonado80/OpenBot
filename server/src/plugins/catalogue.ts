@@ -520,6 +520,25 @@ function readsAsCredential(name: string): boolean {
   return CREDENTIAL_WORDS.some((word) => normalized.includes(word));
 }
 
+/** A local MCP exception names one loopback port and path, with no credentials or parameters. */
+export function localMcpUrl(raw: string): string | null {
+  try {
+    const url = new URL(raw);
+    return url.protocol === "http:" &&
+      url.hostname === "127.0.0.1" &&
+      url.port !== "" &&
+      url.pathname !== "/" &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      !url.hash
+      ? url.href
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Is this a URL an administrator may point the deployment at?
  *
@@ -528,20 +547,27 @@ function readsAsCredential(name: string): boolean {
  * reach: cloud metadata endpoints, databases on the same network, admin panels bound to localhost.
  * The rules are deliberately blunt.
  *
- * HTTPS only, because the credential is a bearer token and plaintext is not negotiable.
+ * HTTPS by default. An operator may explicitly name a local loopback endpoint in development.
  * No address literals, localhost or internal suffixes, because those point at the deployment rather
  * than a vendor service.
  *
  * This is static URL validation: it checks the literal host string and scheme before storage. DNS
  * resolution and per-request network policy are separate deployment controls.
  */
-export function customUrlRefusal(raw: string): string | null {
+export function customUrlRefusal(
+  raw: string,
+  localUrls: readonly string[] = [],
+): string | null {
   let url: URL;
   try {
     url = new URL(raw);
   } catch {
     return "That is not a URL.";
   }
+
+  // Explicit operator configuration is the only exception to the vendor-address floor.
+  const local = localMcpUrl(raw);
+  if (local && localUrls.includes(local)) return null;
 
   if (url.protocol !== "https:") {
     return "An MCP server must be reached over https.";

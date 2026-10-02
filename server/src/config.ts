@@ -16,6 +16,7 @@ import {
   type TranscriptionConfig,
   transcriptionConfig,
 } from "./dictation/config";
+import { localMcpUrl } from "./plugins/catalogue";
 import { type VoiceConfig, voiceConfig } from "./voice/config";
 
 export type RuntimeCapabilities = {
@@ -217,6 +218,8 @@ export type DeploymentConfig = {
    * where a key that was revoked last week would have surfaced regardless.
    */
   composioApiKey: string | undefined;
+  /** Exact HTTP loopback MCP endpoints approved by the operator, for local development only. */
+  localMcpUrls: string[];
   /**
    * Where this deployment is reached from outside, with no trailing slash.
    *
@@ -660,6 +663,23 @@ function commaSeparated(environment: Environment, name: string): string[] {
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean);
+}
+
+function localMcpUrls(environment: Environment): string[] {
+  const values = commaSeparated(environment, "OPENBOT_LOCAL_MCP_URLS");
+  if (values.length === 0) return [];
+  if (isProduction(environment)) {
+    throw new Error("OPENBOT_LOCAL_MCP_URLS is for local development only.");
+  }
+  return values.map((value) => {
+    const url = localMcpUrl(value);
+    if (!url) {
+      throw new Error(
+        "OPENBOT_LOCAL_MCP_URLS must name exact http://127.0.0.1 endpoints with a port and path, without credentials, queries or fragments.",
+      );
+    }
+    return url;
+  });
 }
 
 /**
@@ -1266,6 +1286,7 @@ export function loadConfig(
     agentEndpointAllowedHosts: agentEndpointAllowedHosts(environment),
     deploymentId: optional(environment, "DEPLOYMENT_ID"),
     composioApiKey: optional(environment, "COMPOSIO_API_KEY"),
+    localMcpUrls: localMcpUrls(environment),
     publicUrl: (
       optional(environment, "OPENBOT_PUBLIC_URL") ?? auth?.baseUrl
     )?.replace(/\/+$/, ""),

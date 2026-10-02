@@ -1113,6 +1113,8 @@ export type PluginStoreOptions = {
   encryptionKey: string;
   /** Read at call time, never captured, so a policy changed a moment ago applies to this call. */
   policy: () => ActionPolicy;
+  /** Explicit local endpoint exceptions; absent keeps the HTTPS vendor-only floor. */
+  localMcpUrls?: readonly string[];
   /**
    * Speaking MCP to the vendor. Defaults to the real client.
    *
@@ -2423,7 +2425,13 @@ export function createPluginStore(options: PluginStoreOptions) {
      * and a Composio app made all three of them wrong at once. One derivation means they cannot
      * disagree, and `access.ts` is the only place a new kind of server has to be taught about.
      */
-    return { row, entry, access: accessFor(row, entry) };
+    const access = accessFor(row, entry);
+    // Recheck at use time so removing a local exception also disables previously saved servers.
+    if (!entry && access.transport === "mcp") {
+      const refusal = customUrlRefusal(row.url, options.localMcpUrls);
+      if (refusal) throw new PluginRefusedError(refusal, null);
+    }
+    return { row, entry, access };
   }
 
   /** What a row that answers for an app is asked for: which row it is, and how the app connects. */
@@ -2678,7 +2686,7 @@ export function createPluginStore(options: PluginStoreOptions) {
       credentialId?: string;
       by: string;
     }): Promise<ServerRecord> {
-      const refusal = customUrlRefusal(input.url);
+      const refusal = customUrlRefusal(input.url, options.localMcpUrls);
       if (refusal) throw new CustomServerRefusedError(refusal);
 
       // A custom server may not take a curated entry's slug. The slug prefixes tool names and is

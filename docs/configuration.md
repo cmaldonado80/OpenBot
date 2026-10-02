@@ -65,6 +65,12 @@ at `agent-langgraph` on a laptop.
 | `OPENBOT_GENERATIVE_UI` | unset (capability on)               | Set `false` or `0` to stop Bots from answering with generated interfaces. |
 | `OPENBOT_ACCESSIBILITY_DISABLED` | `true` or `1` stops naming OpenBot on the analytics the runtime already sends. |
 | `COMPOSIO_API_KEY`   | unset                              | One key for the whole deployment, for the broker that holds people's accounts for a few hundred apps. Unset, there is nothing to connect, nothing to grant and no Composio tool for a Bot to call; what remains is one row that goes nowhere, under **More apps** on the admin Plugins page, naming this variable. See [Composio](plugins/composio.md). |
+| `OPENBOT_LOCAL_MCP_URLS` | unset | Comma-separated exact local MCP endpoints, such as `http://127.0.0.1:8301/mcp`. Local development only; refused in production. Each must name `127.0.0.1`, a port and a path, with no credentials, query or fragment. |
+
+Local MCP exceptions allow an administrator to add the named endpoint under Plugins. They do not
+grant any tools to Bots or mount project directories. Redirects from these endpoints are refused.
+Removing an exception and restarting the server disables its saved connection. Keep scope tokens
+in a local proxy or the credential vault, never in the URL or a Bot's instructions.
 
 **`OPENBOT_GENERATIVE_UI`** enables generated interfaces by default: streamed HTML/CSS/JavaScript
 in a sandboxed iframe, and A2UI interfaces built from the SDK's declarative components. A2UI buttons

@@ -718,6 +718,7 @@ const pluginStore = createPluginStore({
   credentials: credentialStore,
   encryptionKey: config.keyEncryptionKey,
   policy: () => policyStore.get(),
+  localMcpUrls: config.localMcpUrls,
   approvalGate: approvalService.gate,
   // A connector send to other people asks the owner first. See plugins/share-target.ts.
   privateShareCheck: createPrivateShareCheck({

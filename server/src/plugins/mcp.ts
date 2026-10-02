@@ -2,6 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { cutAtCodeUnits } from "../channels/text";
+import { localMcpUrl } from "./catalogue";
 
 /**
  * The only place in this deployment that speaks MCP to somebody else's server.
@@ -343,6 +344,10 @@ async function withClient<T>(
   const transport = new StreamableHTTPClientTransport(new URL(connection.url), {
     requestInit: connection.token
       ? { headers: { Authorization: authorizationHeader(connection.token) } }
+      : undefined,
+    // requestInit does not cover the SDK's SSE GETs. Enforce the boundary on every request.
+    fetch: localMcpUrl(connection.url)
+      ? (url, init) => fetch(url, { ...init, redirect: "error" })
       : undefined,
   });
   const client = new Client({ name: "openbot", version: "1.0.0" });
