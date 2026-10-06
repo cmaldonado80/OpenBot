@@ -218,6 +218,23 @@ jobs:
             --set networkPolicy.enabled=true \
             --set computers.extraEnv[0].name=EGRESS_PROXY_DEFAULT \
             --set-string computers.extraEnv[0].value=http://proxy.internal:3128
+          # A delivery or directory switch with no secret behind it. Armed on every target: the chart
+          # requires the value when it holds the secret, and requires the store to name the key when
+          # a store does.
+          refuses "OpenTag switched on with no shared secret" \
+            --set config.opentag.enabled=true
+          refuses "SCIM switched on with no bearer token" \
+            --set config.scim.enabled=true
+          # The rest are refusals the server makes at boot, mirrored so the value is named at install.
+          refuses "an OpenTag URL with the pairing switched off" \
+            --set-string config.opentag.url=https://opentag.example.com
+          refuses "a partial set of Twilio settings" \
+            --set config.sms.enabled=true --set-string secrets.twilioAuthToken=token \
+            --set-string config.sms.accountSid=AC0 --set-string config.sms.verifyServiceSid=VA0
+          refuses "a push project id that is not a UUID" \
+            --set-string config.push.projectId=not-a-uuid
+          refuses "a delivery public URL that is not http(s)" \
+            --set-string config.deliveryPublicUrl=hooks.example.com
           # A warm pool nothing claims from. Only meaningful where the target asks for per-Bot
           # computers; on the others the mode is not sandbox and the refusal is not armed.
           if grep -qE '^ *mode: sandbox' charts/openbot/ci/${{ matrix.target }}-values.yaml; then
@@ -603,6 +620,27 @@ jobs:
             docker buildx build --file "$image/Dockerfile" --platform linux/amd64 .
             echo "::endgroup::"
           done < <(jq -r '.[]' .github/published-images.json)
+      # Building proves the Dockerfile resolves, not that the image starts. A runtime import of a file
+      # the Dockerfile never copied (../../shared/file-download, from #698) built cleanly and crashed
+      # on start. The computer image has no dependencies to start, so it is booted and asked for health.
+      - name: The computer image starts
+        run: |
+          set -euo pipefail
+          docker buildx build --file agent-computer/Dockerfile --platform linux/amd64 --load \
+            --tag openbot-agent-computer:ci .
+          docker run -d --name computer-ci -e COMPUTER_TOKEN=ci-token-0123456789abcdef \
+            -p 127.0.0.1:4100:4100 openbot-agent-computer:ci
+          for _ in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:4100/health >/dev/null; then
+              echo "agent-computer answered /health"
+              exit 0
+            fi
+            if [ "$(docker inspect -f '{{.State.Running}}' computer-ci)" != "true" ]; then break; fi
+            sleep 1
+          done
+          echo "::error::agent-computer did not answer /health"
+          docker logs computer-ci || true
+          exit 1
 
   # One check for branch protection to require. A new job above is covered by this without anybody
   # remembering to add it to a list, and a job that was skipped for the wrong reason is not a pass.

@@ -118,6 +118,8 @@ import { createRoutineRoutes, type RoutineStore } from "./routines/routes";
 import type { RoutineRunner } from "./routines/runner";
 import type { IntentRouter } from "./routing/classify";
 import { createRoutingRoutes } from "./routing/routes";
+import { createCoworkerRoutingService } from "./routing/service";
+import type { SelfHostBanner } from "./self-host-banner";
 import { createTeamBotRoutes } from "./team-bots/routes";
 import type { TeamBots } from "./team-bots/team-bots";
 import type { PackageStatusReader } from "./tenant-package";
@@ -413,6 +415,12 @@ export function createApp(
     /** Pause, reset, Activity and attention for a person's own Bots. See agents/lifecycle.ts. */
     lifecycle?: BotLifecycleServices;
   },
+  /**
+   * Whether to offer help self-hosting, which also hides it from a deployment that pays for
+   * Intelligence. Absent falls back to the operator's switch alone, so a test or a build without the
+   * resolver still answers from `config.selfHostBanner` rather than asking the network.
+   */
+  selfHostBanner?: SelfHostBanner,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
   mountDesktopConnectionFailure(app, desktopHostToken);
@@ -436,6 +444,11 @@ export function createApp(
        * both halves, so off means off.
        */
       generativeUi: config.generativeUi,
+      // Whether to offer help self-hosting OpenBot. A fork running it for its own people turns it off,
+      // and a deployment that pays for Intelligence never sees it. See self-host-banner.ts.
+      selfHostBanner: selfHostBanner
+        ? await selfHostBanner.shown()
+        : config.selfHostBanner,
       transcription: Boolean(config.transcription),
       voice: Boolean(config.voice),
       /*
@@ -1326,29 +1339,31 @@ export function createApp(
       app.route(
         "/api/route",
         createRoutingRoutes(
-          agentProfileStore,
-          intentRouter,
-          requireUser,
-          auditStore,
-          /*
-           * Which vendors each coworker holds tools for, so the router weighs what a coworker can
-           * reach and not only what somebody wrote it was for. Only when there is a plugin store to
-           * ask: a deployment with no connectors routes exactly as it did.
-           */
-          pluginStore
-            ? async (agentId) => {
-                const granted = await pluginStore.listForAgent(agentId);
-                return [
-                  ...new Set(
-                    granted.tools.map(
-                      (tool) =>
-                        tool.toolName.replace(/^mcp__/, "").split("__")[0] ??
-                        tool.toolName,
+          createCoworkerRoutingService({
+            store: agentProfileStore,
+            router: intentRouter,
+            auditStore,
+            /*
+             * Which vendors each coworker holds tools for, so the router weighs what a coworker can
+             * reach and not only what somebody wrote it was for. Only when there is a plugin store to
+             * ask: a deployment with no connectors routes exactly as it did.
+             */
+            reachableSystems: pluginStore
+              ? async (agentId) => {
+                  const granted = await pluginStore.listForAgent(agentId);
+                  return [
+                    ...new Set(
+                      granted.tools.map(
+                        (tool) =>
+                          tool.toolName.replace(/^mcp__/, "").split("__")[0] ??
+                          tool.toolName,
+                      ),
                     ),
-                  ),
-                ];
-              }
-            : undefined,
+                  ];
+                }
+              : undefined,
+          }),
+          requireUser,
         ),
       );
     }
