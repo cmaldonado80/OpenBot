@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { MCPMock } from "@copilotkit/aimock/mcp";
 import { and, eq } from "drizzle-orm";
 import { createAuditStore } from "../src/audit";
+import { localMcpUrl } from "../src/plugins/catalogue";
 import { createDatabase } from "../src/db/client";
 import {
   agents,
@@ -40,13 +41,7 @@ const ref = `${serverId}/${toolName}`;
 
 let policy: ActionPolicy = { mode: "enforce", deny: [], allow: ["true"] };
 
-const store = createPluginStore({
-  database,
-  auditStore: createAuditStore(database),
-  credentials: { readSecret: async () => null },
-  encryptionKey: "x".repeat(44),
-  policy: () => policy,
-});
+let store: ReturnType<typeof createPluginStore>;
 
 const mock = new MCPMock();
 /** What the server on the other end was actually asked, recorded where the assertion can see it. */
@@ -78,13 +73,32 @@ beforeAll(async () => {
   });
   const url = await mock.start();
 
+  /*
+   * The use-time recheck refuses a custom http:// row unless the operator allowlisted the exact
+   * loopback endpoint, and an allowlisted entry carries a port and a path (see config.localMcpUrls,
+   * which reads OPENBOT_LOCAL_MCP_URLS through localMcpUrl). The mock answers on any path, so give
+   * the row one and allowlist it the way an operator's entry would read. What is under test here
+   * is the grant, the policy and the audit row, not the refusal this row would otherwise trip.
+   */
+  const localUrl = localMcpUrl(`${url}/mcp`);
+  if (!localUrl)
+    throw new Error("the mock endpoint must read as a local MCP URL");
+  store = createPluginStore({
+    database,
+    auditStore: createAuditStore(database),
+    credentials: { readSecret: async () => null },
+    encryptionKey: "x".repeat(44),
+    policy: () => policy,
+    localMcpUrls: [localUrl],
+  });
+
   await database
     .insert(mcpServers)
     .values({
       id: serverId,
       title: "Notes",
       vendor: "notes",
-      url,
+      url: localUrl,
       provenance: "custom",
     })
     .onConflictDoNothing();
